@@ -1,0 +1,28 @@
+# LLMLingua2 Pipeline Requirements
+
+# Core dependencies
+llmlingua>=0.2.2
+#transformers>=4.26.0
+#torch
+accelerate
+
+# Data processing
+datasets
+pandas>=1.3.0
+numpy
+
+# API client
+requests
+
+# Evaluation metrics (optional but recommended)
+nltk>=3.6
+rouge-score
+# For MS-MARCO: pip install rouge
+
+# Utilities
+pathlib
+typing-extensions
+
+# Optional: For better performance
+sentencepiece
+tiktoken

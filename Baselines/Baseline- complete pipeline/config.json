@@ -1,0 +1,33 @@
+{
+  "context_separator": "<<<>>>",
+  "api_config": {
+    "api_key": "your_api_key_here",
+    "base_url": "https://api.scaledown.xyz/compress/",
+    "model": "gemini/gemini-2.0-flash"
+  },
+  "compression_methods": {
+    "rate_based": {
+      "rate": 0.3
+    },
+    "token_based": {
+      "target_token": 200
+    },
+    "context_based": {
+      "target_context": 3
+    }
+  },
+  "evaluation": {
+    "enabled": true,
+    "metric": "llm_judge",
+    "parameters": {
+      "judge_model": "gemini/gemini-1.5-pro",
+      "threshold": 0.5
+    }
+  },
+  "dataset_config": {
+    "version": "v2.1",
+    "query_type": "NUMERIC",
+    "max_examples": 100,
+    "start": 0
+  }
+}
