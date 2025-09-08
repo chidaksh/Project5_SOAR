@@ -73,11 +73,31 @@ class TokenInfluenceAnalyzer:
     ) -> Dict:
         input_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
         tokens = [self.tokenizer.decode([t]) for t in input_ids]
-        
+
+
+        # --- START: MODIFIED LOGIC TO EXCLUDE SPECIAL TOKENS FROM ANALYSIS ---
+
+        # Step 1: Create a definitive 'whitelist' of all valid content token indices.
+        special_ids_set = set(self.tokenizer.all_special_ids)
+
+        # Get the "added" tokens (e.g., <|user|>, <|assistant|>)
+        # We get their IDs by taking the keys from the added_tokens_decoder dictionary.
+        added_ids = set(self.tokenizer.added_tokens_decoder.keys())
+
+        # Combine both lists and create a single set for efficient lookup.
+        # This is the complete set of all tokens to be excluded from analysis.
+        non_content_ids_set = special_ids_set.union(added_ids)
+
+        content_token_indices = [
+            idx for idx, token_id in enumerate(input_ids) 
+            if token_id not in non_content_ids_set
+        ]
+
         if target_tokens is None:
-            target_tokens = list(range(len(tokens)))
+            target_tokens = content_token_indices #list(range(len(tokens)))
         else:
-            target_tokens = [t for t in target_tokens if t < len(tokens)]
+            content_indices_set = set(content_token_indices)
+            target_tokens = [t for t in target_tokens if t < len(tokens) and t in content_indices_set]
         
         baseline_input = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0)
         baseline_input = baseline_input.to(self.model.device)

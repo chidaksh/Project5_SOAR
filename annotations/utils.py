@@ -273,12 +273,13 @@ def load_longbench_dataset():
 #         print("Warning: No examples found. Using random subset.")
 #         indices = random.sample(range(len(full_dataset)), min(total_examples, len(full_dataset)))
 #         return full_dataset.select(indices)
-def load_msmarco_dataset(query_types=None, total_examples=1000, seed=42):
+def load_msmarco_dataset(query_types=None, total_examples=1000, seed=42,
+                         only_selected_passages=False):
     """
     Load MS MARCO v2.1 train split, optionally filter by query_type(s),
     and return up to `total_examples` randomly sampled rows.
     """
-    from datasets import load_dataset
+    from datasets import load_dataset, Dataset
 
     # Load
     ds = load_dataset("ms_marco", "v2.1", split="train")
@@ -296,6 +297,56 @@ def load_msmarco_dataset(query_types=None, total_examples=1000, seed=42):
             f"No examples found for query_types={query_types}. "
             "Try different types or pass None to disable filtering."
         )
+
+    # --- MAIN LOGIC BLOCK ---
+    if only_selected_passages:
+        print("Processing dataset to retain all selected passages and their URLs...")
+        processed_rows = []
+        
+        for row in tqdm(ds, desc="Retaining All Selected Passages"):
+            passages_data = row.get('passages', {})
+            passage_texts = passages_data.get('passage_text', [])
+            passage_urls = passages_data.get('url', []) # Get the list of URLs
+            is_selected_flags = passages_data.get('is_selected', [])
+            
+            # Find ALL indices where the flag is 1
+            selected_indices = [i for i, flag in enumerate(is_selected_flags) if flag == 1]
+            
+            if selected_indices:
+                # Collect all passages and URLs corresponding to the selected indices
+                # Includes safety checks for misaligned data
+                selected_passages = [
+                    passage_texts[i] 
+                    for i in selected_indices 
+                    if i < len(passage_texts)
+                ]
+                selected_urls = [
+                    passage_urls[i] 
+                    for i in selected_indices 
+                    if i < len(passage_urls)
+                ]
+
+                # Ensure we have a matching number of passages and URLs
+                if selected_passages and len(selected_passages) == len(selected_urls):
+                    new_row = row.copy()
+                    new_row['passages'] = {
+                        'passage_text': selected_passages,
+                        'url': selected_urls, # Add the list of selected URLs
+                        'is_selected': [1] * len(selected_passages)
+                    }
+                    processed_rows.append(new_row)
+
+        if not processed_rows:
+            raise ValueError("Processing removed all examples. Check dataset integrity.")
+            
+        # Overwrite 'ds' with the new, processed dataset
+        ds = Dataset.from_list(processed_rows)
+        print(f"Processing complete. New dataset size: {len(ds)} examples.")
+    
+    # --- The 'else' case is simply doing nothing to the passages ---
+    else:
+        print("Proceeding with original, unfiltered passages for each example.")
+        pass # No processing needed
 
     # Sample deterministically
     k = min(total_examples, len(ds))
