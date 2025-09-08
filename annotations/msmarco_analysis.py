@@ -614,7 +614,8 @@ def analyze_msmarco_dataset():
     dataset = load_msmarco_dataset(
         query_types=QUERY_TYPES,
         total_examples=TOTAL_EXAMPLES,
-        seed=RANDOM_SEED
+        seed=RANDOM_SEED,
+        only_selected_passages=True
     )
     
     # Initialize analyzer
