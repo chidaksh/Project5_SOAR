@@ -6,8 +6,8 @@ A memory-optimized implementation for analyzing token influence in Large Languag
 
 This system implements a comprehensive three-phase approach for identifying and labeling statistically significant tokens that influence model predictions:
 
-- **Phase 1**: Stochastic token influence analysis using dropout-based masking
-- **Phase 2**: Empirical null distribution calculation from punctuation tokens
+- **Phase 1**: Fast token importance analysis using raw transformer attention scores
+- **Phase 2**: Data-driven null distribution calculated from the least influential (bottom-k) tokens in a large sample
 - **Phase 3**: Statistical analysis with FDR-controlled labeling (TC/TH/TR classification)
 
 ## Features
@@ -49,7 +49,6 @@ TOTAL_EXAMPLES = 1                  # Examples to process per query type
 NULL_EXAMPLES = 1                   # Examples for null distribution
 
 MODEL_ID = "microsoft/Phi-3-mini-128k-instruct"  # HuggingFace model
-NUM_STOCHASTIC_REPEATS = 3          # Stochastic repeats per token
 ```
 
 ### Key Configuration Options
@@ -142,23 +141,21 @@ The system is optimized for GPU memory efficiency:
 ## Algorithm Details
 
 ### Phase 1: Token Influence Analysis
-1. Tokenize input prompt
-2. Establish baseline prediction with full prompt
-3. For each token, create masked version (token removal)
-4. Calculate influence as difference in log-odds
-5. Repeat process with stochastic dropout for uncertainty estimation
+1.  Perform a single forward pass of the model, enabling `output_attentions`.
+2.  Extract attention weights from the final transformer layer.
+3.  Calculate an importance score for each token based on the attention paid *to the final token position*, averaged across all attention heads.
 
 ### Phase 2: Null Distribution
-1. Collect punctuation tokens from sample prompts
-2. Calculate token influences for punctuation (assumed neutral)
-3. Build empirical null distribution by positional bins or uniformly
-4. Compute mean, std, and percentile statistics
+1.  Collect attention scores for all content tokens from a large sample of prompts.
+2.  Group the collected scores by their positional bin (`first_10%`, `middle_80%`, etc.).
+3.  **Within each bin**, identify the "bottom k%" of tokens with the lowest absolute attention scores.
+4.  Use this subset of genuinely low-importance tokens to build a robust, position-aware null distribution and compute its statistics.
 
 ### Phase 3: Statistical Classification
-1. Calculate shrunken Z-scores using null distribution
-2. Group tokens into linguistic spans via spaCy NER
-3. Apply Benjamini-Hochberg FDR control
-4. Assign final labels: TC (Critical), TH (Harmful), TR (Redundant)
+1. Calculate Z-scores using the null distribution.
+2. Group tokens into linguistic spans via spaCy.
+3. Apply Benjamini-Hochberg FDR control.
+4. Assign final labels: TC (Critical), TH (Harmful), TR (Redundant).
 
 ## Troubleshooting
 
@@ -228,25 +225,19 @@ python msmarco_analysis.py
 
 ## Methodology
 
-### Phase 1: Stochastic Token Influence
-1. **Baseline Calculation**: Compute model's prediction probability for the original prompt
-2. **Token Masking**: Remove each token individually and measure prediction change  
-3. **Stochastic Sampling**: Use dropout with multiple repeats to get robust estimates
-4. **Influence Metric**: Calculate log-odds difference between masked and baseline
+### Phase 1: Token Importance from Attention
+1.  **Single Forward Pass**: Run the model on the original prompt a single time with `output_attentions=True`.
+2.  **Attention Extraction**: Isolate the attention weights from the final layer of the transformer.
+3.  **Importance Metric**: Calculate a score for each token by averaging the attention heads and selecting the weight directed at the final token position. This represents the token's contribution to the final prediction step.
 
 ### Phase 2: Empirical Null Distribution
-1. **Punctuation Identification**: Find all punctuation tokens in prompts
-2. **Positional Binning** (if enabled): Categorize tokens into bins:
-   - First 10% of prompt (sentence beginnings)
-   - Middle 80% of prompt (main content)
-   - Last 10% of prompt (sentence endings)
-3. **Statistical Calculation**: Compute mean, standard deviation, and percentiles for each bin
-
-### Phase 3: Statistical Classification
-1. **Shrunken Z-scores**: Apply James-Stein-like shrinkage using null distribution
-2. **Linguistic Spans**: Group tokens into meaningful units via spaCy NER
-3. **FDR Control**: Apply Benjamini-Hochberg procedure for multiple testing correction
-4. **Final Labeling**: Assign TC/TH/TR labels based on statistical significance
+1.  **Score Aggregation**: Collect attention scores from all content tokens across a large sample of diverse prompts.
+2.  **Positional Binning** (if enabled): Categorize every collected score into bins:
+    - First 10% of prompt
+    - Middle 80% of prompt
+    - Last 10% of prompt
+3.  **Bottom-k Selection**: **Within each bin**, identify the subset of scores (e.g., bottom 20%) with the lowest absolute magnitude. These represent empirically "unimportant" tokens for that position.
+4.  **Statistical Calculation**: Compute mean, standard deviation, and percentiles for each bin's subset of bottom-k scores.
 
 ## Citation
 
