@@ -29,7 +29,6 @@ class ScaleDownAPI:
         try:
             response = requests.post(self.base_url, headers=headers, data=json.dumps(payload))
             response.raise_for_status()
-            print("API Response: ", response.json())
             return response.json().get('full_response', '')
         except Exception as e:
             logging.error(f"API Error: {e}")

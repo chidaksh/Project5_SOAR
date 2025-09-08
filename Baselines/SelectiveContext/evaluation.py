@@ -29,8 +29,8 @@ def _create_evaluators(config: Dict[str, Any]) -> Dict[str, Any]:
         evaluators['bleu'] = BLEUEvaluator(config)
     if 'rouge' in metrics:
         evaluators['rouge'] = ROUGEEvaluator(config)
-    if 'msmarco' in metrics:
-        evaluators['msmarco'] = MSMARCOEvaluator(config)
+    # if 'msmarco' in metrics:
+    #     evaluators['msmarco'] = MSMARCOEvaluator(config)
     if 'llm_judge' in metrics:
         generator = ScaleDownGenerator(config)
         evaluators['llm_judge'] = LLMJudgeEvaluator(generator)
