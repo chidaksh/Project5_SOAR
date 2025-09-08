@@ -4,6 +4,11 @@ import torch
 
 RANDOM_SEED = 42
 
+
+
+BOTTOM_K_PERCENT_FOR_NULL = 20 # The bottom 20% of tokens will form the null distribution
+
+
 QUERY_TYPES = ["NUMERIC"]
 TOTAL_EXAMPLES = 1
 NULL_EXAMPLES = 1
