@@ -1,79 +1,216 @@
-# Baselines
+# SelectiveContext Evaluation Pipeline
 
-## Selective Context for Prompt Compression
+This directory implements a three-phase evaluation pipeline for prompt compression using the Selective Context method on MS-MARCO dataset. The implementation is adapted from [liyucheng09/Selective_Context](https://github.com/liyucheng09/Selective_Context).
 
-This section describes an adaptation of the LongBench evaluation framework to incorporate prompt compression using the Selective Context method. The original code is forked from [THUDM/LongBench](https://github.com/THUDM/LongBench) and the Selective Context implementation is adapted from [liyucheng09/Selective_Context](https://github.com/liyucheng09/Selective_Context).
+## Overview
 
-**Core Idea:**
+The evaluation follows a **three-phase pipeline**:
+1. **Phase 1: Compress** - Apply SelectiveContext compression to MS-MARCO dataset
+2. **Phase 2: Generate** - Generate responses using compressed contexts  
+3. **Phase 3: Evaluate** - Assess quality using multiple evaluation metrics
 
-The primary goal is to evaluate the performance of language models on long-context tasks when the context is compressed *before* being fed to the model. `Selective Context` is a technique that identifies and removes less important parts of the context, aiming to reduce the computational load and context length while preserving key information.
+Each phase transforms the dataset by adding new fields while preserving original data for analysis.
 
-**Two-Step Benchmark Workflow:**
+## Configuration
 
-The evaluation process has been refactored into a two-step pipeline.
+All experiments are configured through `experiment.yaml`:
 
-1.  **Step 1: Compression**: The entire `THUDM/LongBench-v2` dataset is compressed once and saved to disk. This step uses the `Selective Context` method.
-2.  **Step 2: Prediction**: The benchmark is run using the pre-compressed dataset.
+```yaml
+# Dataset and output settings
+save_dir: "results"
+dataset:
+  name: "microsoft/ms_marco"
+  version: "v2.1"
+  split: "validation" 
+  query_type: "NUMERIC"        # Filter by query type
+  max_examples: 2              # Limit dataset size
 
-This approach allows for multiple experiments on the same compressed data without re-running the costly compression step each time.
+# Compression configuration
+compressor:
+  model_type: "meta-llama/Llama-3.2-3B"
+  reduce_ratio: 0.35           # Target compression ratio
+  reduce_level: "phrase"       # Compression granularity
 
-**File Descriptions:**
+# Generation configuration  
+generation:
+  generator_type: "scaledown"
+  api:
+    base_url: "https://api.scaledown.xyz/compress/"
+    api_key: "your-api-key"
+    model: "gemini-2.5-flash"
 
-*   `compress.py`: Compresses the `THUDM/LongBench-v2` dataset.
-*   `pred_compress.py`: Runs the LongBench benchmark on a compressed dataset.
-*   `compressor/`: Contains the Selective Context implementation.
+# Evaluation configuration
+evaluation:
+  metrics: ["bleu", "rouge", "msmarco"]  # Available: bleu, rouge, msmarco, llm_judge
+```
 
-## Setup & How to Run
+## Phase 1: Compression (`compress.py`)
 
-Due to dependency conflicts, you will need two separate Conda environments.
+Applies SelectiveContext compression to MS-MARCO passages.
 
-1.  **Environment for vLLM:**
-    ```bash
-    conda env create -f vllm.yml
-    ```
+**Usage:**
+```bash
+python compress.py [config.yaml]  # Uses experiment.yaml by default
+```
 
-2.  **Environment for Selective Context:**
-    ```bash
-    conda env create -f selective_context.yml
-    conda activate selective-context
-    python -m spacy download en_core_web_sm
-    ```
+**Dataset Structure After Compression:**
 
-**How to Run:**
+Original MS-MARCO fields are preserved, plus new compression-related fields:
 
-The benchmark process requires two separate shell sessions because the model server and the evaluation script use conflicting dependencies.
+```python
+{
+  # Original MS-MARCO fields
+  "query_id": int,
+  "query_type": str, 
+  "query": str,
+  "answers": List[str],
+  "wellFormedAnswers": List[str],
+  
+  # Compressed data
+  "passages": {
+    "passage_text": List[str],          # Compressed passage texts
+    "is_selected": List[bool],          # Original selection flags  
+    "url": List[str],                   # Original URLs
+    "context_unit": List[List[str]],    # Original context units per passage
+    "kept_context_unit_mask": List[List[bool]]  # Compression masks per passage
+  },
+  
+  # Compression metadata
+  "original_passages": dict,            # Original uncompressed passages
+  "compression_words_ratio": float,     # Words ratio (compressed/original)
+  "compression_characters_ratio": float, # Character ratio (compressed/original) 
+  "compression_rate": float,            # Target compression rate from config
+  "compression_level": str,             # Compression granularity from config
+  "compression_error": str              # Error message if compression failed
+}
+```
 
-**Step 1: Compress the Dataset**
+**Output:**
+- Compressed dataset saved to `results/MS-MARCO-compressed-{ratio}-{level}/`
+- Metadata saved to `results/MS-MARCO-compressed-{ratio}-{level}.json`
 
-In your first terminal, activate the `selective_context` environment and run the compression script. Using `--dryrun` is recommended for the first time to ensure everything is set up correctly.
+## Phase 2: Response Generation (`generate.py`)
+
+Generates responses using compressed contexts via configured API.
+
+**Usage:**
+```bash  
+python generate.py [config.yaml]  # Uses experiment.yaml by default
+```
+
+**Dataset Structure After Generation:**
+
+All compression fields are preserved, plus new generation fields:
+
+```python
+{
+  # ... (all fields from Phase 1) ...
+  
+  # Generated response data
+  "generated_response": str,            # Generated answer text
+  "generation_metadata": {
+    "generator": str,                   # Generator type (e.g., "scaledown") 
+    "model": str,                       # Model name used for generation
+    "timestamp": str,                   # ISO format generation timestamp
+    "api_response_time": float,         # Response time in seconds (if available)
+    "generation_error": str             # Error message if generation failed
+  }
+}
+```
+
+**Features:**
+- Incremental processing: Only processes samples without `generated_response`
+- Progress saving: Saves intermediate results every 10 samples
+- Error handling: Failed generations logged with error messages
+
+## Phase 3: Evaluation (`evaluation.py`)
+
+Evaluates generated responses using multiple metrics against ground truth answers.
+
+**Usage:**
+```bash
+python evaluation.py [config.yaml]  # Uses experiment.yaml by default  
+```
+
+**Available Evaluation Metrics:**
+- **BLEU**: N-gram overlap similarity with smoothing
+- **ROUGE**: Recall-oriented understudy for gisting evaluation (ROUGE-1, ROUGE-2, ROUGE-L)
+- **MS-MARCO**: Official MS-MARCO evaluator (BLEU + ROUGE + F1 + Semantic Similarity)
+- **LLM Judge**: LLM-based quality assessment (binary match/no-match)
+
+**Evaluation Results Structure:**
+
+```python
+{
+  "evaluation_results": [
+    {
+      "query_id": int,
+      "query": str, 
+      "ground_truth": str,              # Joined answers
+      "generated_response": str,
+      
+      # Metric scores (depending on configured metrics)
+      "bleu": float,                    # BLEU score (0-1)
+      "rouge_1": float,                 # ROUGE-1 F-score (0-1)
+      "rouge_2": float,                 # ROUGE-2 F-score (0-1) 
+      "rouge_l": float,                 # ROUGE-L F-score (0-1)
+      "llm_judge_score": int,           # LLM judge score (0 or 1)
+      # ... (additional MS-MARCO metrics if enabled)
+    }
+  ],
+  "aggregate_metrics": {
+    "avg_bleu": float,                  # Average BLEU across samples
+    "avg_rouge_1": float,               # Average ROUGE-1 across samples
+    "count_bleu": int,                  # Number of samples with BLEU scores
+    # ... (averages and counts for all metrics)
+  },
+  "evaluation_metadata": {
+    "timestamp": str,                   # Evaluation timestamp
+    "total_samples": int,               # Number of evaluated samples
+    "metrics_used": List[str]           # List of evaluation metrics applied
+  }
+}
+```
+
+**Output:**
+- Results saved to `results/MS-MARCO-compressed-{ratio}-{level}_evaluation_results.json`
+
+## Complete Workflow
+
+Run all three phases sequentially:
 
 ```bash
-conda activate selective-context
-python compress.py \
-    --save_dir results \
-    --compressor_model_type microsoft/Phi-3-mini-128k-instruct \
-    --dryrun 5
+# Phase 1: Compress dataset
+python compress.py
+
+# Phase 2: Generate responses  
+python generate.py
+
+# Phase 3: Evaluate responses
+python evaluation.py
 ```
-*Remove `--dryrun 5` to process the entire dataset.*
 
-**Step 2: Serve the Language Model**
+**File Progression:**
+1. `compress.py` → `results/MS-MARCO-compressed-0_35-phrase/`
+2. `generate.py` → Updates same dataset with `generated_response` fields
+3. `evaluation.py` → `results/MS-MARCO-compressed-0_35-phrase_evaluation_results.json`
 
-In a second, separate terminal, activate the `vllm` environment and start the vLLM server. This server will handle requests from the benchmark script. Make sure the model name matches what you intend to evaluate.
+## Setup
 
+Install dependencies:
 ```bash
-conda activate vllm
-vllm serve Qwen/Qwen2-0.5B-Instruct --port 8000 --api-key token-abc123
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm  # For MS-MARCO evaluator
+python -m spacy download en_core_web_lg  # For MS-MARCO evaluator
 ```
-*This process will occupy this terminal. Leave it running.*
 
-**Step 3: Run the Benchmark**
+## Module Structure
 
-Return to your first terminal (with the `selective_context` environment still active) and run the benchmark script. It will connect to the vLLM server you just started.
-
-```bash
-python pred_compress.py \
-    --model Qwen/Qwen2-0.5B-Instruct \
-    --compressed_data_dir results \
-    --n_proc 1
-```
-*Make sure the `--model` argument here matches the model served in Step 2.*
+- `compress.py` - Main compression script
+- `generate.py` - Response generation script  
+- `evaluation.py` - Evaluation script
+- `compressor/` - SelectiveContext implementation
+- `generator/` - Response generation backends
+- `evaluator/` - Evaluation metrics implementation
+- `utils.py` - Shared utilities (config loading)
+- `experiment.yaml` - Experiment configuration
