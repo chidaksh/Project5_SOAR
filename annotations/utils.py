@@ -14,8 +14,9 @@ def setup_model_and_tokenizer():
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         device_map="auto",
-        torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        torch_dtype=torch.float16,
+        # attn_implementation="flash_attention_2",
+        attn_implementation="eager",
         trust_remote_code=True,
     )
     

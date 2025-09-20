@@ -14,7 +14,6 @@ from utils import (
     setup_model_and_tokenizer,
     load_msmarco_dataset,
     format_msmarco_prompt,
-    get_token_probability_from_input_ids,
     calculate_log_odds,
 )
 
@@ -36,6 +35,20 @@ except OSError:
     nlp = None
 
 
+# In msmarco_analysis.py, after the imports
+
+class NumpyJSONEncoder(json.JSONEncoder):
+    """ Custom encoder for numpy data types """
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NumpyJSONEncoder, self).default(obj)
+
+    
 class TokenInfluenceAnalyzer:
     def __init__(self, model, tokenizer):
         self.model = model
@@ -70,7 +83,7 @@ class TokenInfluenceAnalyzer:
         input_ids_tensor = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(self.model.device)['input_ids']
         
         with torch.no_grad():
-            outputs = self.model(input_ids_tensor, output_attentions=True)
+            outputs = self.model(input_ids_tensor, output_attentions=True, use_cache=False)
         
         attentions = outputs.attentions 
         last_layer_attentions = attentions[-1]
@@ -145,8 +158,8 @@ class TokenInfluenceAnalyzer:
         for bin_name, values in self.null_distributions.items():
             if values:
                 null_stats[bin_name] = {
-                    'mean': np.mean(values), 'std': np.std(values), 'count': len(values),
-                    'percentiles': {'95': np.percentile(values, 95), '99': np.percentile(values, 99)}
+                    'mean': float(np.mean(values)), 'std': float(np.std(values)), 'count': len(values),
+                    'percentiles': {'95': float(np.percentile(values, 95)), '99': float(np.percentile(values, 99))}
                 }
             else:
                 null_stats[bin_name] = {
@@ -182,7 +195,7 @@ class TokenInfluenceAnalyzer:
         try:
             input_tensor = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0).to(self.model.device)
             with torch.no_grad():
-                outputs = self.model(input_tensor)
+                outputs = self.model(input_tensor, use_cache=False)
                 logits = outputs.logits[0, -1, :]
                 probs = torch.softmax(logits, dim=-1)
                 top_prob = torch.max(probs).item()
@@ -407,7 +420,7 @@ def analyze_msmarco_dataset():
     # --- (The rest of the function for saving results can remain the same) ---
     with open(RESULTS_FILE, 'w') as f:
         # The `all_results` structure is complex but should be JSON-serializable
-        json.dump(all_results, f, indent=2)
+        json.dump(all_results, f, indent=2, cls=NumpyJSONEncoder)
 
     with open(ATTRIBUTIONS_FILE, 'w') as f:
         detailed_attributions = []
@@ -424,7 +437,7 @@ def analyze_msmarco_dataset():
                     'positional_bin': token['positional_bin'],
                     'span_info': token.get('span_info')
                 })
-        json.dump(detailed_attributions, f, indent=2)
+        json.dump(detailed_attributions, f, indent=2, cls=NumpyJSONEncoder)
     
     print(f"\n=== Analysis Complete ===")
     print(f"Results saved to {RESULTS_FILE}")

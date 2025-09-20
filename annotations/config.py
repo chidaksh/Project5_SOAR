@@ -10,8 +10,8 @@ BOTTOM_K_PERCENT_FOR_NULL = 20 # The bottom 20% of tokens will form the null dis
 
 
 QUERY_TYPES = ["NUMERIC"]
-TOTAL_EXAMPLES = 1
-NULL_EXAMPLES = 1
+TOTAL_EXAMPLES = 3
+NULL_EXAMPLES = 3
 
 MODEL_ID = "microsoft/Phi-3-mini-128k-instruct"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
