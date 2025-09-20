@@ -103,7 +103,7 @@ class TokenInfluenceAnalyzer:
         baseline_input = baseline_input.to(self.model.device)
         
         with torch.no_grad():
-            baseline_outputs = self.model(baseline_input)
+            baseline_outputs = self.model(baseline_input, use_cache=False)
             baseline_logits = baseline_outputs.logits[0, -1, :]
             baseline_probs = torch.softmax(baseline_logits, dim=-1)
             # Get top prediction

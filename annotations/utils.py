@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import numpy as np
+from tqdm import tqdm
 
 MODEL_ID = "microsoft/Phi-3-mini-128k-instruct"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -14,7 +15,8 @@ def setup_model_and_tokenizer():
         MODEL_ID,
         device_map="auto",
         torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        # attn_implementation="flash_attention_2",
+        attn_implementation="eager",
         trust_remote_code=True,
     )
     
@@ -174,7 +176,7 @@ def get_token_probability_from_input_ids(model, tokenizer, input_ids: torch.Tens
         input_ids = input_ids.to(model.device)
     
     with torch.no_grad():
-        outputs = model(input_ids)
+        outputs = model(input_ids, use_cache=False)
         logits = outputs.logits[:, -1, :]
         probs = F.softmax(logits, dim=-1)
     
