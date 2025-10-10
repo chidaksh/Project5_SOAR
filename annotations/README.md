@@ -1,273 +1,183 @@
-# Token Influence Analysis with Statistical Guarantees
-
-A memory-optimized implementation for analyzing token influence in Large Language Models using stochastic dropout, empirical null distributions, and statistical significance testing. This project uses the MS MARCO dataset to provide statistically rigorous token annotations with False Discovery Rate (FDR) control.
+# Passage Attribution Analysis - Log-Probability Method
 
 ## Overview
 
-This system implements a comprehensive three-phase approach for identifying and labeling statistically significant tokens that influence model predictions:
-
-- **Phase 1**: Stochastic token influence analysis using dropout-based masking
-- **Phase 2**: Empirical null distribution calculation from punctuation tokens
-- **Phase 3**: Statistical analysis with FDR-controlled labeling (TC/TH/TR classification)
-
-## Features
-
-- **Memory-Optimized**: GPU memory management with configurable batch sizes and sequential processing
-- **Statistical Rigor**: Empirical null distributions with shrunken Z-scores and FDR control
-- **Flexible Positional Analysis**: Configurable positional binning (first 10%, middle 80%, last 10%) or uniform analysis
-- **MS MARCO Integration**: Optimized dataset filtering and sampling by query types
-- **Comprehensive Output**: Per-token attributions with detailed statistical metrics
-- **Production Ready**: Error handling, progress tracking, and reproducible results
-
-## Requirements
-
-```bash
-torch>=2.0.0
-transformers>=4.35.0
-datasets>=2.14.0
-numpy>=1.24.0
-tqdm>=4.65.0
-spacy>=3.7.0
-scipy>=1.11.0
-```
-
-Install dependencies:
-```bash
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
-```
-
-## Configuration
-
-Edit `config.py` to customize the analysis:
-
-### Core Settings
-```python
-RANDOM_SEED = 42                    # Reproducibility seed
-QUERY_TYPES = ["NUMERIC"]           # MS MARCO query types to analyze
-TOTAL_EXAMPLES = 1                  # Examples to process per query type
-NULL_EXAMPLES = 1                   # Examples for null distribution
-
-MODEL_ID = "microsoft/Phi-3-mini-128k-instruct"  # HuggingFace model
-NUM_STOCHASTIC_REPEATS = 3          # Stochastic repeats per token
-```
-
-### Key Configuration Options
-
-**Positional Binning Mode:**
-```python
-USE_POSITIONAL_BINNING = True       # Enable/disable positional analysis
-```
-- `True`: Analyzes tokens in 3 bins (first 10%, middle 80%, last 10%)
-- `False`: Treats all punctuation equally across entire prompt
-
-**Statistical Parameters:**
-```python
-Q_CRITICAL = 0.15                   # FDR level for critical spans
-Q_HARMFUL = 0.05                    # FDR level for harmful spans
-```
-
-### Supported Query Types
-- `NUMERIC`: Numerical answer questions
-- `ENTITY`: Named entity questions  
-- `DESCRIPTION`: Descriptive questions
-- `PERSON`: Person-related questions
-- `LOCATION`: Location-based questions
-
-## Usage
-
-### Basic Analysis
-```bash
-python msmarco_analysis.py
-```
-
-### Validate Configuration
-```bash
-python config.py
-```
-
-## Output Files
-
-The analysis generates three key output files:
-
-1. **`null_distribution_stats.json`**: Phase 2 null distribution statistics
-2. **`msmarco_phase3_results.json`**: Complete analysis results with span annotations
-3. **`token_attributions_detailed.json`**: Per-token attributions with all metrics
-
-### Token Attribution Format
-```json
-{
-  "example_id": 0,
-  "query": "What is...",
-  "token": "word",
-  "attribution": 0.123,
-  "std_deviation": 0.045,
-  "class": "critical|harmful|redundant",
-  "shrunken_z_score": 2.34,
-  "positional_bin": "first_10|middle_80|last_10|all_positions",
-  "token_idx": 5,
-  "span_info": {...}
-}
-```
-
-## Token Classification
-
-- **TC (Critical)**: Tokens significantly increasing prediction confidence
-- **TH (Harmful)**: Tokens significantly decreasing prediction confidence  
-- **TR (Redundant)**: Tokens with no significant statistical impact
-
-## Memory Management
-
-The system is optimized for GPU memory efficiency:
-- Sequential token processing
-- Automatic cache clearing
-- Configurable batch sizes
-- Error recovery with memory cleanup
-
-## Architecture
-
-## Performance
-
-### Optimizations Implemented
-- **Dataset Filtering**: Efficient query-type-specific filtering before sampling
-- **Sequential Processing**: Memory-efficient token-by-token analysis
-- **GPU Memory Management**: Automatic cache clearing and garbage collection
-- **Batch Processing**: Configurable batch sizes for different hardware
-
-### Expected Performance
-- **Memory Usage**: ~2-4GB GPU memory for Phi-3-mini
-- **Processing Speed**: ~1-2 minutes per example (depends on prompt length)
-- **Scalability**: Linear scaling with number of examples
-
-## Algorithm Details
-
-### Phase 1: Token Influence Analysis
-1. Tokenize input prompt
-2. Establish baseline prediction with full prompt
-3. For each token, create masked version (token removal)
-4. Calculate influence as difference in log-odds
-5. Repeat process with stochastic dropout for uncertainty estimation
-
-### Phase 2: Null Distribution
-1. Collect punctuation tokens from sample prompts
-2. Calculate token influences for punctuation (assumed neutral)
-3. Build empirical null distribution by positional bins or uniformly
-4. Compute mean, std, and percentile statistics
-
-### Phase 3: Statistical Classification
-1. Calculate shrunken Z-scores using null distribution
-2. Group tokens into linguistic spans via spaCy NER
-3. Apply Benjamini-Hochberg FDR control
-4. Assign final labels: TC (Critical), TH (Harmful), TR (Redundant)
-
-## Troubleshooting
-
-### Common Issues
-- **CUDA OOM**: Reduce `BATCH_SIZE` or `TOTAL_EXAMPLES`
-- **spaCy Missing**: Run `python -m spacy download en_core_web_sm`
-- **Dataset Loading**: Check internet connection for HuggingFace datasets
-- **Empty Results**: Verify query types match available data
-
-### Debug Mode
-Set small values for testing:
-```python
-TOTAL_EXAMPLES = 1
-NULL_EXAMPLES = 1
-NUM_STOCHASTIC_REPEATS = 2
-```
-
-## Quick Start
-
-1. **Install dependencies:**
-```bash
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
-```
-
-2. **Configure analysis** in `config.py`:
-```python
-TOTAL_EXAMPLES = 5      # Start small for testing
-NULL_EXAMPLES = 10      # Sufficient for null distribution
-USE_POSITIONAL_BINNING = True  # Enable positional analysis
-```
-
-3. **Run analysis:**
-```bash
-python msmarco_analysis.py
-```
-
-4. **Check outputs:**
-- `null_distribution_stats.json` - Null distribution statistics
-- `msmarco_phase3_results.json` - Complete analysis results  
-- `token_attributions_detailed.json` - Per-token attributions
-
-## Example Output
-
-### Null Distribution Statistics
-```json
-{
-  "first_10": {
-    "mean": -0.000123,
-    "std": 0.045678,
-    "count": 150,
-    "percentiles": {"95": 0.089234, "99": 0.156789}
-  }
-}
-```
-
-### Token Classification Results
-```json
-{
-  "token": "important",
-  "attribution": 0.234,
-  "class": "critical",
-  "shrunken_z_score": 2.45,
-  "positional_bin": "middle_80"
-}
-```
+This implementation measures which passages in MS-MARCO contribute to the model's ability to generate correct answers using **log-probability attribution**.
 
 ## Methodology
 
-### Phase 1: Stochastic Token Influence
-1. **Baseline Calculation**: Compute model's prediction probability for the original prompt
-2. **Token Masking**: Remove each token individually and measure prediction change  
-3. **Stochastic Sampling**: Use dropout with multiple repeats to get robust estimates
-4. **Influence Metric**: Calculate log-odds difference between masked and baseline
+### Core Metric
 
-### Phase 2: Empirical Null Distribution
-1. **Punctuation Identification**: Find all punctuation tokens in prompts
-2. **Positional Binning** (if enabled): Categorize tokens into bins:
-   - First 10% of prompt (sentence beginnings)
-   - Middle 80% of prompt (main content)
-   - Last 10% of prompt (sentence endings)
-3. **Statistical Calculation**: Compute mean, standard deviation, and percentiles for each bin
+We measure `log P(answer | context, question)` directly by:
+1. Concatenating prompt + gold answer
+2. Computing per-token cross-entropy loss only on answer tokens
+3. Masking prompt and padding tokens with `-100` (ignore_index)
+4. Summing negative log-likelihood to get log-probability
 
-### Phase 3: Statistical Classification
-1. **Shrunken Z-scores**: Apply James-Stein-like shrinkage using null distribution
-2. **Linguistic Spans**: Group tokens into meaningful units via spaCy NER
-3. **FDR Control**: Apply Benjamini-Hochberg procedure for multiple testing correction
-4. **Final Labeling**: Assign TC/TH/TR labels based on statistical significance
+### Attribution Calculation
 
-## Citation
+For each sample:
+- **Baseline**: `log_prob(answer | full_context, question)`
+- **No-context**: `log_prob(answer | "", question)`
+- **Ablation_i**: `log_prob(answer | context_without_passage_i, question)`
 
-If you use this code in your research, please cite:
+**Delta**: `Δᵢ = baseline - ablation_i`
 
-```bibtex
-@software{token_influence_analysis,
-  title={Token Influence Analysis with Statistical Guarantees},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/your-repo/token-influence-analysis}
+**Interpretation**:
+- **Positive Δ**: Removing passage decreases confidence → passage is **helpful**
+- **Negative Δ**: Removing passage increases confidence → passage is **confusing**
+- **Δ ≈ 0**: Passage has no impact
+
+## Files
+
+- **`paragraph_level_analysis.py`**: Main analysis script (500 samples)
+- **`test_optimization.py`**: Quick test (3 samples) for validation
+- **`requirements.txt`**: Python dependencies
+
+## Key Fixes Applied
+
+### Bug 1: Incorrect Prompt Length Calculation (CRITICAL)
+**Problem**: Used padded batch length instead of individual prompt lengths
+```python
+# ❌ WRONG
+prompt_lengths = prompt_inputs.input_ids.shape[1]  # Same for all!
+
+# ✅ CORRECT
+prompt_inputs = tokenizer(prompts, padding=False, ...)
+prompt_lengths = [len(ids) for ids in prompt_inputs.input_ids]
+```
+
+### Bug 2: Padding Tokens Not Masked (CRITICAL)
+**Problem**: Loss computed on PAD tokens, inflating negative log-likelihood
+```python
+# ✅ FIXED - Added padding mask
+labels[labels == tokenizer.pad_token_id] = -100
+```
+
+### Bug 3: Redundant Code
+**Fixed**: Removed unused imports and redundant loss calculations
+
+## Usage
+
+### Test First (Recommended)
+```bash
+python test_optimization.py
+```
+
+**Expected output**:
+```
+Sample 0: 9 passages
+  Baseline log-prob: -8.78
+  No-context log-prob: -26664.34
+  Delta total: 26655.56
+  Selected passage delta: 197.64 (positive = helpful)
+  Non-selected mean delta: 81.59
+```
+
+✓ Baseline should be LESS negative than no-context  
+✓ Selected passages should have HIGHER mean delta  
+✓ All log-probs should be DIFFERENT
+
+### Full Analysis
+```bash
+# Remove any old checkpoints
+rm passage_attribution_checkpoint.json 2>/dev/null
+
+# Run full analysis
+python paragraph_level_analysis.py
+```
+
+**Runtime**: ~6-7 minutes for 500 samples  
+**Output**: `passage_attribution_results_logprob.json`
+
+### Resume from Checkpoint
+If interrupted, the script automatically resumes from the last checkpoint (saved every 50 samples).
+
+## Expected Results
+
+### Good Attribution Example
+```json
+{
+  "query_id": "6260",
+  "question": "average cost of dying",
+  "baseline_log_prob": -8.78,
+  "no_context_log_prob": -26664.34,
+  "delta_total": 26655.56,
+  "passage_analysis": [
+    {
+      "passage_idx": 8,
+      "delta_log_prob": 197.64,  // Highest delta
+      "is_selected": 1            // Contains the answer
+    },
+    {
+      "passage_idx": 0,
+      "delta_log_prob": 45.23,
+      "is_selected": 0
+    }
+    // ... other passages with lower deltas
+  ]
 }
 ```
 
-## License
+### Statistical Analysis
+After processing all samples, the script reports:
+- **Mean delta**: Average contribution across all passages
+- **Std delta**: Variability in contributions
+- **2-sigma threshold**: `mean + 2*std` for identifying highly influential passages
 
-This project is licensed under the MIT License.
+## Configuration
 
-## Acknowledgments
+In `paragraph_level_analysis.py`:
 
-- Microsoft for the MS MARCO dataset
-- HuggingFace for model hosting and transformers library
-- spaCy team for linguistic processing tools
-- The Phi-3 team for the efficient language model
+```python
+MODEL_ID = "microsoft/Phi-3-mini-4k-instruct"
+MAX_CONTEXT_LENGTH = 4000
+DATASET_NAME = "ms_marco"
+DATASET_CONFIG = "v1.1"
+QUERY_TYPES = ["NUMERIC"]
+NUM_SAMPLES = 500
+BATCH_SIZE = 32              # Adjust based on GPU memory
+CHECKPOINT_FREQ = 50         # Save every N samples
+```
+
+## Performance Optimizations
+
+1. **Batching**: All prompts (baseline + no-context + ablations) processed together
+2. **Flash Attention 2**: Used if available for faster inference
+3. **Checkpointing**: Automatic resume capability
+4. **Memory Management**: Explicit cleanup every 10 samples
+
+## Troubleshooting
+
+### All deltas are 0.0
+- ❌ Bug: Padding tokens not masked
+- ✅ Ensure line 70: `labels[labels == tokenizer.pad_token_id] = -100`
+
+### No-context values extremely negative
+- ❌ Bug: Individual prompt lengths not used
+- ✅ Ensure lines 60-61 use `padding=False` and list comprehension
+
+### Out of memory
+- Reduce `BATCH_SIZE` from 32 to 16 or 8
+- Reduce `MAX_CONTEXT_LENGTH` if contexts are very long
+
+## Verification
+
+Run verification to ensure fixes are working:
+```bash
+python test_optimization.py
+```
+
+Check that:
+1. Log-probs vary across conditions (not all identical)
+2. Baseline > no-context (context helps)
+3. Selected passages have positive mean delta
+4. No warnings about tensor shape mismatches
+
+## Citation
+
+This implementation is based on:
+- **Methodology**: Standard log-probability attribution
+- **Optimization**: Batched inference for efficiency
+- **Dataset**: MS-MARCO v1.1 (numeric queries)
+- **Model**: Microsoft Phi-3-mini-4k-instruct

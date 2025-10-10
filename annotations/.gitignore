@@ -1,5 +1,11 @@
 /.windsurf
-/__pycache__
+__pycache__/
+*.pyc
 *.sl
 *.err
 *.out
+/token_level/
+*_results*.json
+*_checkpoint_*.json
+/activate.sh
+*.txt
